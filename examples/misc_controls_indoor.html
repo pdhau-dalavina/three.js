@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>test_controls</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <style>
+        html, body {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #viewport {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+        }
+    </style>
+</head>
+<body>
+<div id="viewport"></div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "../build/three.module.js",
+            "three/addons/": "./jsm/"
+        }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { IndoorControls } from 'three/addons/controls/IndoorControls.js';
+    import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    var viewport, camera, scene, renderer, controls;
+    var room = new THREE.Object3D();
+    var rooms = [];
+
+    init();
+    animate();
+
+    // 场景初始化
+    function init() {
+
+        // 新建相机
+        camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 1, 2000 );
+        camera.lookAt( new THREE.Vector3( 0, 0, 0 ) );
+
+        // 新建场景
+        scene = new THREE.Scene();
+
+        // 加载环境贴图
+        loadEnvironment( './textures/equirectangular/venice_sunset_1k.hdr' ).then( function ( envMap ) {
+
+            scene.background = envMap;
+            scene.environment = envMap;
+
+        } );
+
+        // 导入GLTF模型
+        // setModels( './models/gltf/Room.glb' );
+        setModels( './models/gltf/demo.glb' );
+        // setModels( 'http://localhost:3000/models/demo.glb' );
+
+        // 渲染场景
+        renderer = new THREE.WebGLRenderer( { antialias: true } );
+        renderer.setSize( window.innerWidth, window.innerHeight );
+        renderer.setPixelRatio( window.devicePixelRatio );
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 0.85;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        viewport = document.getElementById( 'viewport' );
+        viewport.appendChild( renderer.domElement );
+
+        // 新建控制器
+        // controls = new IndoorControls( camera, renderer.domElement );
+
+        // // 新建鼠标光标
+        // let helperMaterial = new THREE.MeshBasicMaterial();
+        // helperMaterial.transparent = true;
+        // helperMaterial.opacity = 0.2;
+        // let helperGeometry = new THREE.CircleGeometry( 0.2, 64 );
+        // let mouseHelper = new THREE.Mesh( helperGeometry, helperMaterial );
+
+        // let ringMaterial = new THREE.MeshBasicMaterial();
+        // ringMaterial.transparent = true;
+        // ringMaterial.opacity = 0.8;
+        // let ringGeometry = new THREE.RingGeometry( 0.2, 0.22, 64 );
+        // let ring = new THREE.Mesh( ringGeometry, ringMaterial );
+        // mouseHelper.add( ring );
+
+        // mouseHelper.visible = false;
+        // mouseHelper.renderOrder = 1;
+
+        // scene.add( mouseHelper );
+
+        // 添加光标移动事件
+        // controls.addEventListener( 'move', function ( event ) {
+
+        //     let intersect = event.intersect;
+        //     let normal = intersect.face.normal;
+
+        //     if ( normal.y !== 1 ) {
+
+        //         mouseHelper.visible = false;
+        //         controls.enabled_move = false;
+
+        //     } else {
+
+        //         mouseHelper.position.set( 0, 0, 0 );
+        //         mouseHelper.lookAt( normal );
+
+        //         mouseHelper.position.copy( intersect.point );
+        //         mouseHelper.position.addScaledVector( normal, 0.001 );
+
+        //         mouseHelper.visible = true;
+        //         controls.enabled_move = true;
+
+        //     }
+
+        // } );
+
+        // 监听窗口缩放
+        // window.addEventListener( 'resize', onWindowResize, false );
+
+    }
+
+    // 响应窗口缩放
+    function onWindowResize() {
+
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize( window.innerWidth, window.innerHeight );
+
+        controls.reset( camera, renderer.domElement );
+
+    }
+
+    // 加载环境贴图
+    function loadEnvironment( url ) {
+
+        let rgbeLoader = new RGBELoader();
+        rgbeLoader.setDataType( THREE.HalfFloatType );
+        return new Promise( resolve => {
+
+            rgbeLoader.load( url, function ( texture ) {
+
+                let pmremGenerator = new THREE.PMREMGenerator( renderer );
+                pmremGenerator.compileEquirectangularShader();
+
+                let envMap = pmremGenerator.fromEquirectangular( texture ).texture;
+                pmremGenerator.dispose();
+
+                resolve( envMap );
+
+            } );
+
+        } );
+
+    }
+
+    // 导入GLTF模型
+    function setModels( url ) {
+
+        let gltfLoader = new GLTFLoader();
+        gltfLoader.load( url, function ( gltf ) {
+
+            let sceneImport = gltf.scene || gltf.scenes[0];
+
+            sceneImport.traverse( function ( node ) {
+
+                // 设置模型所有节点接收和产生阴影
+                node.receiveShadow = true;
+                if ( node.isMesh || node.isLight ) node.castShadow = true;
+
+                // 设置控制器的捕捉对象
+                if (node.name === 'ConfRoom') controls.ground.push( node );
+
+            } );
+
+            sceneImport.scale.set( 0.01, 0.01, 0.01 );
+
+            setModelConfig( sceneImport );
+
+            room = sceneImport;
+            rooms.push( sceneImport );
+            scene.add( sceneImport );
+
+        } );
+
+    }
+
+    // 根据模型设置相机和控制器参数
+    function setModelConfig( sceneImport ) {
+
+        // 根据导入模型获取范围盒
+        let boxSize = new THREE.Vector3();
+        const roomBox = new THREE.Box3().setFromObject( sceneImport );
+        const size = roomBox.getSize( boxSize ).length();
+        const center = roomBox.getCenter( new THREE.Vector3() );
+
+        camera.near = size / 100;
+        camera.far = size * 100;
+        camera.position.copy( center );
+
+        // 物体外部
+        /*camera.position.x += boxSize.x * 0.8;
+        camera.position.y += boxSize.y * 0.8;
+        camera.position.z += boxSize.z * 0.8;
+        camera.lookAt( center );*/
+
+        // 物体内部
+        camera.position.y -= boxSize.y * 0.02;
+        let cameraLook = camera.position.clone();
+        cameraLook.x += boxSize.x * 0.02;
+        cameraLook.y -= boxSize.y * 0.02;
+        cameraLook.z += boxSize.z * 0.02;
+        camera.lookAt( cameraLook );
+
+        // controls.update();
+        camera.updateProjectionMatrix();
+
+    }
+
+    // 更新动画
+    function animate() {
+
+        requestAnimationFrame( animate );
+
+        // 更新控制器
+        // controls.update();
+
+        renderer.render( scene, camera );
+
+    }
+</script>
+</body>
+</html>
